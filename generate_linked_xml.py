@@ -22,7 +22,7 @@ law_pattern = re.compile(
     f"(次の)?(?P<Item>({jpnum_text('ItemFrom', '号')}(から{jpnum_text('ItemTo', '号')})?)?)(まで)?"
     f")"
 )
-square_brackets_pattern = re.compile("「[^「」]*」")
+square_brackets_pattern = re.compile( "(「[^「」]*」)|(「[^「」]*「[^「」]*」[^「」]*」)|(「[^「」]*「[^「」]*「[^「」]*」[^「」]*」[^「」]*」)")
 title_brackets_pattern = re.compile(".*年.*第.*号（(?P<name>.*)）")
 alias_pattern = re.compile(
     f"(?P<word>(([^、（）])|{brackets})*)（[^（）]*「(?P<alias>[^（）「」]*)」という"
