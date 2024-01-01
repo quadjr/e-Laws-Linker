@@ -69,7 +69,8 @@ def add_lookup_dict(lookup_dict, law_name, law_id):
         base_dict = base_dict[a]
     if "" not in base_dict:
         base_dict[""] = []
-    base_dict[""].append(law_id)
+    if law_id not in base_dict[""]:
+        base_dict[""].append(law_id)
 
 def lookup_dict(lookup_dict, sentence, offset = 0):
     law_ids = []
