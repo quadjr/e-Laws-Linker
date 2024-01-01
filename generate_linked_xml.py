@@ -8,7 +8,7 @@ import glob
 import os
 
 def jpnum_text(tag, title):
-    return r"((第(?P<" + tag + r">[一二三四五六七八九十百千]+)" + title + r"(の(?P<" + tag + r"_sub>[一二三四五六七八九十百千]+))*)|((([前次](?P<" + tag + r"_rel>[一二三四五六七八九十百千]*))|同|(前?各))" + title + r"中?))"
+    return r"((第(?P<" + tag + r">[一二三四五六七八九十百千]+)" + title + r"([のノ](?P<" + tag + r"_sub>[一二三四五六七八九十百千]+))*)|((([前次](?P<" + tag + r"_rel>[一二三四五六七八九十百千]*))|同|(前?各))" + title + r"中?))"
 
 # 3重括弧まで対応
 brackets = "(（[^（）]*）)|(（[^（）]*（[^（）]*）[^（）]*）)|(（[^（）]*（[^（）]*（[^（）]*）[^（）]*）[^（）]*）)"
@@ -22,6 +22,7 @@ law_pattern = re.compile(
     f"(次の)?(?P<Item>({jpnum_text('ItemFrom', '号')}(から{jpnum_text('ItemTo', '号')})?)?)(まで)?"
     f")"
 )
+square_brackets_pattern = re.compile("「[^「」]*」")
 title_brackets_pattern = re.compile(".*年.*第.*号（(?P<name>.*)）")
 alias_pattern = re.compile(
     f"(?P<word>(([^、（）])|{brackets})*)（[^（）]*「(?P<alias>[^（）「」]*)」という"
@@ -120,6 +121,22 @@ def fix_law_name(law_name):
         law_name = law_name_match.group("name")
     return law_name
 
+def is_unstable_elements(parent_map, el):
+    is_unstable = False
+
+    parent = parent_map[el]
+    while parent is not None:
+        if parent.tag == "SupplProvision" or parent.tag.startswith("Appdx") or parent.tag.startswith("Table"):
+            is_unstable = True
+            break
+
+        if parent in parent_map:
+            parent = parent_map[parent]
+        else:
+            break
+
+    return is_unstable
+
 def load_law_info():
     law_name_dict = {}
     law_info_dict = {}
@@ -186,6 +203,8 @@ for file_no, xml_file in enumerate(xml_files):
         self_paragraph = None
         self_item = None
 
+        is_unstable = is_unstable_elements(parent_map, sentence)
+
         parent = parent_map[sentence]
         while parent is not None:
             if "Num" in parent.attrib:
@@ -215,6 +234,12 @@ for file_no, xml_file in enumerate(xml_files):
         link_list = []
         link_end_dict = {}
         while offset < len(text):
+            # 「」で括られた部分はスキップ
+            brackets_match = square_brackets_pattern.match(text, offset)
+            if brackets_match:
+                offset += len(brackets_match.group())
+                continue
+
             alias_match = alias_pattern.match(text, offset)
 
             # 法令名辞書からの検索
@@ -282,6 +307,7 @@ for file_no, xml_file in enumerate(xml_files):
                     len(law_match.group("Paragraph")) > 0 or
                     len(law_match.group("Item")) > 0):
                     spefify_level = 0
+                    is_relative = False
 
                     if len(law_match.group("Law")) > 0 and law_match.group("Law") != "附則":
                         law = pre_law
@@ -310,8 +336,10 @@ for file_no, xml_file in enumerate(xml_files):
                         elif "各条" in law_match.group("Article"):
                             article = "1"
                         elif "前" in law_match.group("Article"):
+                            is_relative = True
                             article = get_relative_el(root, parent_map, sentence, "Article", -rel_num)
                         elif "次" in law_match.group("Article"):
+                            is_relative = True
                             article = get_relative_el(root, parent_map, sentence, "Article",  rel_num)
                         else:
                             article = pre_artcile
@@ -334,8 +362,10 @@ for file_no, xml_file in enumerate(xml_files):
                         elif "各項" in law_match.group("Paragraph"):
                             paragraph = "1"
                         elif "前" in law_match.group("Paragraph"):
+                            is_relative = True
                             paragraph = get_relative_el(root, parent_map, sentence, "Paragraph", -rel_num)
                         elif "次" in law_match.group("Paragraph"):
+                            is_relative = True
                             paragraph = get_relative_el(root, parent_map, sentence, "Paragraph",  rel_num)
                         else:
                             paragraph = pre_paragraph
@@ -359,8 +389,10 @@ for file_no, xml_file in enumerate(xml_files):
                         elif "各号" in law_match.group("Item"):
                             item = "1"
                         elif "前" in law_match.group("Item"):
+                            is_relative = True
                             item = get_relative_el(root, parent_map, sentence, "Item", -rel_num)
                         elif "次" in law_match.group("Item"):
+                            is_relative = True
                             item = get_relative_el(root, parent_map, sentence, "Item",  rel_num)
                     else:
                         item = None
@@ -370,9 +402,10 @@ for file_no, xml_file in enumerate(xml_files):
                     if spefify_level < 3:
                         paragraph = None
 
-                    link_end_dict[law_match.end("Link_text")] = law
-                    link_list.append({"start":law_match.start("Link_text"), "end":law_match.end("Link_text"),
-                        "law": law, "article":article, "paragraph":paragraph, "item":item})
+                    if not (is_unstable and is_relative):
+                        link_end_dict[law_match.end("Link_text")] = law
+                        link_list.append({"start":law_match.start("Link_text"), "end":law_match.end("Link_text"),
+                            "law": law, "article":article, "paragraph":paragraph, "item":item})
 
                     pre_law = law
                     pre_artcile = article
@@ -381,8 +414,9 @@ for file_no, xml_file in enumerate(xml_files):
                     offset += len(law_match.group())
                     continue
             except:
-                print("同法/同施行規則、条、項、号指定 例外", text[offset:min(len(text), offset + 100)])
-            
+                if not is_unstable:
+                    print("同法/同施行規則、条、項、号指定 例外", text[offset:min(len(text), offset + 100)])
+
             offset += 1
 
         link_list.sort(key=lambda x: x["start"])
